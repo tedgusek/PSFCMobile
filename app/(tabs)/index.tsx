@@ -14,7 +14,7 @@ export default function HomeScreen() {
         <Image
           // source={require('@/assets/images/partial-react-logo.png')}
           source={require('@/assets/images/psfc-logo.png')}
-          style={styles.reactLogo}
+          style={styles.coopLogo}
         />
       }
     >
@@ -70,11 +70,13 @@ const styles = StyleSheet.create({
     gap: 8,
     marginBottom: 8,
   },
-  reactLogo: {
+  coopLogo: {
     height: 178,
     width: 290,
+    top: 75,
     bottom: 0,
-    left: 0,
+    left: '50%',
+    transform: [{ translateX: -145 }], //Ha;f of the width
     position: 'absolute',
   },
 });
