@@ -10,13 +10,13 @@ export default function HomeScreen() {
     <ParallaxScrollView
       // headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
       headerBackgroundColor={{ light: '#555555', dark: '#777777' }}
-      headerBackgroundImage={
-        <ImageBackground
-          source={require('@assets/images/sugarsnappeas.png')}
-          style={styles.headerBackground}
-          resizeMode='cover'
-        />
-      }
+      // headerBackgroundImage={
+      //   <ImageBackground
+      //     source={require('@/assets/images/sugarsnappeas.png')}
+      //     style={styles.headerBackground}
+      //     resizeMode='cover'
+      //   />
+      // }
       headerImage={
         <Image
           // source={require('@/assets/images/partial-react-logo.png')}
