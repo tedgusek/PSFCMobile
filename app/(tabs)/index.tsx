@@ -1,4 +1,4 @@
-import { Image, StyleSheet, Platform } from 'react-native';
+import { Image, StyleSheet, Platform, ImageBackground } from 'react-native';
 
 import { HelloWave } from '@/components/HelloWave';
 import ParallaxScrollView from '@/components/ParallaxScrollView';
@@ -9,7 +9,14 @@ export default function HomeScreen() {
   return (
     <ParallaxScrollView
       // headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerBackgroundColor={{ light: '#1111111', dark: '#777777' }}
+      headerBackgroundColor={{ light: '#555555', dark: '#777777' }}
+      headerBackgroundImage={
+        <ImageBackground
+          source={require('@assets/images/sugarsnappeas.png')}
+          style={styles.headerBackground}
+          resizeMode='cover'
+        />
+      }
       headerImage={
         <Image
           // source={require('@/assets/images/partial-react-logo.png')}
@@ -76,7 +83,13 @@ const styles = StyleSheet.create({
     top: 75,
     bottom: 0,
     left: '50%',
-    transform: [{ translateX: -145 }], //Ha;f of the width
+    transform: [{ translateX: -145 }], //Half of the width
     position: 'absolute',
+  },
+  headerBackground: {
+    flex: 1,
+    height: 200,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });
