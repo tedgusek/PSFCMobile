@@ -61,10 +61,14 @@ export default function ParallaxScrollView({
           style={[
             styles.header,
             { backgroundColor: headerBackgroundColor[colorScheme] },
-            headerBackgroundImage,
+            // headerBackgroundImage,
             headerAnimatedStyle,
           ]}
         >
+          <ThemedView style={StyleSheet.absoluteFill}>
+            {headerBackgroundImage}
+            <ThemedView style={styles.lightOverlay} />
+          </ThemedView>
           {headerImage}
         </Animated.View>
         <ThemedView style={styles.content}>{children}</ThemedView>
@@ -86,5 +90,9 @@ const styles = StyleSheet.create({
     padding: 32,
     gap: 16,
     overflow: 'hidden',
+  },
+  lightOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(125,125,125,0.6)',
   },
 });
