@@ -5,77 +5,198 @@ import {
   View,
   Text,
   ActivityIndicator,
+  TouchableOpacity,
+  Alert,
 } from 'react-native';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { HelloWave } from '@/components/HelloWave';
 import ParallaxScrollView from '@/components/ParallaxScrollView';
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
 
+// ── Config ────────────────────────────────────────────────────────────────────
+const BACKEND_URL = 'https://psfc-backend.fly.dev'; // Update after Fly.io deploy
+const POLL_INTERVAL = 30 * 1000; // 30 seconds while screen is active
+
+// ── Types ─────────────────────────────────────────────────────────────────────
 interface EventItem {
   time: string;
   description: string;
 }
 
 interface SectionData {
-  title: string;
+  title: string; // date string, e.g. "Monday, November 4"
   data: EventItem[];
 }
 
+// ── Component ─────────────────────────────────────────────────────────────────
 export default function HomeScreen() {
   const [sections, setSections] = useState<SectionData[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false); // Subtle background refresh indicator
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [claimingKey, setClaimingKey] = useState<string | null>(null); // Which shift is mid-claim
 
-  //   useEffect(() => {
-  //     fetch(`http://localhost:3030/api/shifts`)
-  //       .then((res) => res.json())
-  //       .then((json) => {
-  //         const transformed = Object.entries(json).map(([date, events]) => ({
-  //           title: date,
-  //           data: events,
-  //         }));
-  //         setSections(transformed);
-  //         setLoading(false);
-  //       })
-  //       .catch((err) => {
-  //         console.log('failed to fetch schedule: ', err);
-  //         setLoading(false);
-  //       });
-  //   });
-  // }, []);
-  useEffect(() => {
-    // Replace with your actual endpoint
-    fetch(`http://localhost:3030/api/shifts`)
-      .then((res) => res.json())
-      .then((json: Record<string, EventItem[]>) => {
-        const transformed = Object.entries(json).map(([date, events]) => ({
-          title: date,
-          data: events,
-        }));
-        setSections(transformed);
-        setLoading(false);
-      })
-      .catch((err) => {
-        console.error('Failed to fetch schedule:', err);
-        setLoading(false);
-      });
+  const pollTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // ── Fetch shifts from backend ───────────────────────────────────────────────
+  const fetchShifts = useCallback(async (isBackground = false) => {
+    if (isBackground) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
+
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/shifts`);
+      const json = (await res.json()) as Record<string, EventItem[]>;
+
+      if (!res.ok) {
+        console.error('Shifts endpoint error:', json);
+        return;
+      }
+
+      const transformed = Object.entries(json).map(([date, events]) => ({
+        title: date,
+        data: events as EventItem[],
+      }));
+
+      setSections(transformed);
+      setLastUpdated(new Date());
+    } catch (err) {
+      console.error('Failed to fetch schedule:', err);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
   }, []);
 
-  const renderItem = ({ item }: { item: EventItem }) => (
-    <View style={styles.card}>
-      <Text style={styles.cardTime}>{item.time}</Text>
-      <Text style={styles.cardDescription}>{item.description}</Text>
-    </View>
+  // ── Claim a shift ───────────────────────────────────────────────────────────
+  const claimShift = useCallback(
+    async (date: string, item: EventItem) => {
+      const shiftKey = `${date}|${item.time}|${item.description}`;
+
+      Alert.alert(
+        'Claim Shift',
+        `Sign up for:\n${date} at ${item.time}\n${item.description}?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Confirm',
+            onPress: async () => {
+              setClaimingKey(shiftKey);
+              try {
+                const res = await fetch(`${BACKEND_URL}/api/shifts/claim`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    date,
+                    time: item.time,
+                    description: item.description,
+                    username: 'REPLACE_WITH_LOGGED_IN_USERNAME', // TODO: pull from SecureStore / auth context
+                  }),
+                });
+
+                const data = await res.json();
+
+                if (res.ok) {
+                  Alert.alert('✅ Success', data.message ?? 'Shift claimed!');
+                  // Immediately remove the claimed shift from the local list
+                  // so the user sees instant feedback while the rescrape runs
+                  setSections((prev) =>
+                    prev
+                      .map((section) => ({
+                        ...section,
+                        data: section.data.filter(
+                          (s) =>
+                            !(
+                              section.title === date &&
+                              s.time === item.time &&
+                              s.description === item.description
+                            ),
+                        ),
+                      }))
+                      .filter((section) => section.data.length > 0),
+                  );
+                } else {
+                  Alert.alert(
+                    '❌ Unavailable',
+                    data.error ?? 'Could not claim shift. Please try again.',
+                  );
+                  // Refresh immediately so they see the current state
+                  await fetchShifts(true);
+                }
+              } catch (err) {
+                Alert.alert(
+                  '❌ Network Error',
+                  'Please check your connection and try again.',
+                );
+                console.error('Claim error:', err);
+              } finally {
+                setClaimingKey(null);
+              }
+            },
+          },
+        ],
+      );
+    },
+    [fetchShifts],
   );
+
+  // ── 30-second polling loop (runs only while this screen is mounted) ─────────
+  useEffect(() => {
+    fetchShifts(false); // Initial load
+
+    pollTimerRef.current = setInterval(() => {
+      fetchShifts(true); // Background refresh — doesn't show full loading spinner
+    }, POLL_INTERVAL);
+
+    return () => {
+      // Clean up when user navigates away — no wasted network calls
+      if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+    };
+  }, [fetchShifts]);
+
+  // ── Render helpers ──────────────────────────────────────────────────────────
+  const renderItem = ({
+    item,
+    section,
+  }: {
+    item: EventItem;
+    section: SectionData;
+  }) => {
+    const shiftKey = `${section.title}|${item.time}|${item.description}`;
+    const isClaiming = claimingKey === shiftKey;
+
+    return (
+      <TouchableOpacity
+        style={styles.card}
+        onPress={() => claimShift(section.title, item)}
+        disabled={isClaiming}
+        activeOpacity={0.75}
+      >
+        <View style={styles.cardContent}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.cardTime}>{item.time}</Text>
+            <Text style={styles.cardDescription}>{item.description}</Text>
+          </View>
+          {isClaiming ? (
+            <ActivityIndicator size='small' color='#007AFF' />
+          ) : (
+            <Text style={styles.signUpButton}>Sign Up →</Text>
+          )}
+        </View>
+      </TouchableOpacity>
+    );
+  };
 
   const renderSectionHeader = ({ section }: { section: SectionData }) => (
     <Text style={styles.sectionHeader}>{section.title}</Text>
   );
 
+  // ── JSX ─────────────────────────────────────────────────────────────────────
   return (
     <ParallaxScrollView
-      // headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      // headerBackgroundColor={{ light: '#999999', dark: '#777777' }}
       headerBackgroundImage={
         <Image
           source={require('@/assets/images/sugarsnappeas.png')}
@@ -85,27 +206,45 @@ export default function HomeScreen() {
       }
       headerImage={
         <Image
-          // source={require('@/assets/images/partial-react-logo.png')}
-          // source={require('@/assets/images/sugarsnappeas.png')}
           source={require('@/assets/images/psfc-logo.png')}
           style={styles.coopLogo}
         />
       }
-      headerBackgroundColor={{
-        dark: '',
-        light: '',
-      }} // headerBackgroundImage={undefined}
+      headerBackgroundColor={{ dark: '', light: '' }}
     >
       <ThemedView style={styles.titleContainer}>
         <ThemedText type='title'>Welcome!</ThemedText>
         <HelloWave />
       </ThemedView>
+
+      {/* Subtle "last updated" + live refresh indicator */}
+      <View style={styles.statusBar}>
+        {refreshing && (
+          <ActivityIndicator
+            size='small'
+            color='#888'
+            style={{ marginRight: 6 }}
+          />
+        )}
+        {lastUpdated && (
+          <Text style={styles.lastUpdatedText}>
+            Updated{' '}
+            {lastUpdated.toLocaleTimeString([], {
+              hour: '2-digit',
+              minute: '2-digit',
+            })}
+          </Text>
+        )}
+      </View>
+
       {loading ? (
         <ActivityIndicator
           size='large'
           color='#888'
-          style={{ marginTop: 20 }}
+          style={{ marginTop: 40 }}
         />
+      ) : sections.length === 0 ? (
+        <Text style={styles.emptyText}>No shifts available right now.</Text>
       ) : (
         <SectionList
           sections={sections}
@@ -113,21 +252,19 @@ export default function HomeScreen() {
           renderItem={renderItem}
           renderSectionHeader={renderSectionHeader}
           contentContainerStyle={styles.sectionListContainer}
+          scrollEnabled={false} // ParallaxScrollView handles scrolling
         />
       )}
     </ParallaxScrollView>
   );
 }
 
+// ── Styles ────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   titleContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-  },
-  stepContainer: {
-    gap: 8,
-    marginBottom: 8,
   },
   coopLogo: {
     height: 178,
@@ -135,23 +272,23 @@ const styles = StyleSheet.create({
     top: 75,
     bottom: 0,
     left: '50%',
-    transform: [{ translateX: -145 }], //Half of the width
+    transform: [{ translateX: -145 }],
     position: 'absolute',
   },
   headerBackground: {
-    // flex: 1,
-    // height: 200,
-    // justifyContent: 'center',
-    // alignItems: 'center',
-    // borderWidth: 5,
-    // borderColor: 'red',
-    // position: 'absolute',
-    // top: 0,
-    // left: 0,
-    // right: 0,
-    // width: '100%',
     ...StyleSheet.absoluteFillObject,
     resizeMode: 'cover',
+  },
+  statusBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingTop: 4,
+    paddingBottom: 8,
+  },
+  lastUpdatedText: {
+    fontSize: 12,
+    color: '#999',
   },
   sectionListContainer: {
     paddingHorizontal: 16,
@@ -175,6 +312,10 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 3,
   },
+  cardContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   cardTime: {
     fontSize: 16,
     fontWeight: '600',
@@ -183,5 +324,17 @@ const styles = StyleSheet.create({
   cardDescription: {
     fontSize: 14,
     color: '#666',
+  },
+  signUpButton: {
+    fontSize: 14,
+    color: '#007AFF',
+    fontWeight: '600',
+    marginLeft: 8,
+  },
+  emptyText: {
+    textAlign: 'center',
+    marginTop: 40,
+    color: '#999',
+    fontSize: 16,
   },
 });
