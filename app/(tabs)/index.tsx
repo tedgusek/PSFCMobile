@@ -22,6 +22,7 @@ const POLL_INTERVAL = 30 * 1000; // 30 seconds while screen is active
 interface EventItem {
   time: string;
   description: string;
+  href: string; // Shift signup URL passed back to backend for Puppeteer
 }
 
 interface SectionData {
@@ -93,6 +94,7 @@ export default function HomeScreen() {
                     date,
                     time: item.time,
                     description: item.description,
+                    href: item.href, // Passed to Puppeteer to click the actual signup link
                     username: 'REPLACE_WITH_LOGGED_IN_USERNAME', // TODO: pull from SecureStore / auth context
                   }),
                 });
