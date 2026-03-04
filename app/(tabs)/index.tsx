@@ -10,6 +10,7 @@ import {
   TextInput,
   KeyboardAvoidingView,
   Platform,
+  ScrollView,
 } from 'react-native';
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import Animated, {
@@ -23,12 +24,12 @@ import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
 import { useBottomTabOverflow } from '@/components/ui/TabBarBackground';
 
-// ── Config ─────────────────────────────────────────────────────────────────
+// ── Config ──────────────────────────────────────────────────────────────────
 const BACKEND_URL = 'https://psfc-backend.fly.dev';
 const POLL_INTERVAL = 30 * 1000;
 const HEADER_HEIGHT = 250;
 
-// ── Types ──────────────────────────────────────────────────────────────────
+// ── Types ───────────────────────────────────────────────────────────────────
 interface EventItem {
   time: string;
   description: string;
@@ -45,7 +46,7 @@ interface PendingClaim {
   item: EventItem;
 }
 
-// ── Component ──────────────────────────────────────────────────────────────
+// ── Component ────────────────────────────────────────────────────────────────
 export default function HomeScreen() {
   const [sections, setSections] = useState<SectionData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -58,7 +59,7 @@ export default function HomeScreen() {
 
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Parallax scroll tracking — Animated.ScrollView ref, no SectionList conflict
+  // Parallax — typed correctly for Animated.ScrollView
   const scrollRef = useAnimatedRef<Animated.ScrollView>();
   const scrollOffset = useScrollViewOffset(scrollRef);
   const bottom = useBottomTabOverflow();
@@ -109,14 +110,14 @@ export default function HomeScreen() {
     }
   }, []);
 
-  // ── Tap a shift → open initials modal ────────────────────────────────────
+  // ── Tap a shift → open modal ──────────────────────────────────────────────
   const handleShiftPress = useCallback((date: string, item: EventItem) => {
     setInitials('');
     setInitialsError('');
     setPendingClaim({ date, item });
   }, []);
 
-  // ── Submit initials → claim shift ─────────────────────────────────────────
+  // ── Submit initials → claim ───────────────────────────────────────────────
   const handleInitialsSubmit = useCallback(async () => {
     if (!pendingClaim) return;
 
@@ -148,7 +149,6 @@ export default function HomeScreen() {
       const data = (await res.json()) as { message?: string; error?: string };
 
       if (res.ok) {
-        // Optimistically remove the claimed shift from the list
         setSections((prev) =>
           prev
             .map((s) => ({
@@ -191,7 +191,7 @@ export default function HomeScreen() {
     }
   }, [pendingClaim, initials, fetchShifts]);
 
-  // ── Polling ────────────────────────────────────────────────────────────────
+  // ── Polling ───────────────────────────────────────────────────────────────
   useEffect(() => {
     fetchShifts(false);
     pollTimerRef.current = setInterval(() => fetchShifts(true), POLL_INTERVAL);
@@ -200,23 +200,20 @@ export default function HomeScreen() {
     };
   }, [fetchShifts]);
 
-  // ── JSX ────────────────────────────────────────────────────────────────────
+  // ── JSX ───────────────────────────────────────────────────────────────────
   return (
-    <ThemedView style={styles.container}>
-      {/*
-        Single Animated.ScrollView owns all scrolling.
-        The parallax ref is typed correctly here — no SectionList conflict.
-      */}
+    <View style={styles.container}>
+      {/* Single Animated.ScrollView — owns all scrolling, parallax ref typed correctly */}
       <Animated.ScrollView
         ref={scrollRef}
+        style={styles.scrollView}
+        contentContainerStyle={{ paddingBottom: bottom + 40 }}
         scrollEventThrottle={16}
-        contentContainerStyle={[
-          styles.scrollContent,
-          { paddingBottom: bottom + 40 },
-        ]}
         scrollIndicatorInsets={{ bottom }}
+        bounces
+        alwaysBounceVertical
       >
-        {/* ── Parallax header ────────────────────────────────────────────── */}
+        {/* ── Parallax header ───────────────────────────────────────────── */}
         <View style={styles.headerContainer}>
           <Animated.View
             style={[styles.headerImageWrapper, headerAnimatedStyle]}
@@ -235,7 +232,7 @@ export default function HomeScreen() {
           />
         </View>
 
-        {/* ── Welcome + status ───────────────────────────────────────────── */}
+        {/* ── Welcome + status ──────────────────────────────────────────── */}
         <ThemedView style={styles.welcomeRow}>
           <ThemedText type='title'>Welcome!</ThemedText>
           <HelloWave />
@@ -260,7 +257,7 @@ export default function HomeScreen() {
           )}
         </View>
 
-        {/* ── Shift list ─────────────────────────────────────────────────── */}
+        {/* ── Shift list ────────────────────────────────────────────────── */}
         {loading ? (
           <ActivityIndicator
             size='large'
@@ -272,14 +269,10 @@ export default function HomeScreen() {
         ) : (
           sections.map((section) => (
             <View key={section.title}>
-              {/* Section header */}
               <Text style={styles.sectionHeader}>{section.title}</Text>
-
-              {/* Shift cards */}
               {section.data.map((item, index) => {
                 const shiftKey = `${section.title}|${item.time}|${item.description}`;
                 const isClaiming = claimingKey === shiftKey;
-
                 return (
                   <TouchableOpacity
                     key={`${item.time}-${index}`}
@@ -309,7 +302,7 @@ export default function HomeScreen() {
         )}
       </Animated.ScrollView>
 
-      {/* ── Initials Modal ──────────────────────────────────────────────────── */}
+      {/* ── Initials Modal ────────────────────────────────────────────────── */}
       <Modal
         visible={pendingClaim !== null}
         transparent
@@ -386,18 +379,29 @@ export default function HomeScreen() {
           </View>
         </KeyboardAvoidingView>
       </Modal>
-    </ThemedView>
+    </View>
   );
 }
 
-// ── Styles ─────────────────────────────────────────────────────────────────
+// ── Styles ──────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  scrollContent: { flexGrow: 1 },
+  // The outer View must be flex:1 so the ScrollView has a bounded height
+  container: {
+    flex: 1,
+  },
+  // ScrollView must also be flex:1 to fill the container
+  scrollView: {
+    flex: 1,
+  },
 
   // Header
-  headerContainer: { height: HEADER_HEIGHT, overflow: 'hidden' },
-  headerImageWrapper: { ...StyleSheet.absoluteFillObject },
+  headerContainer: {
+    height: HEADER_HEIGHT,
+    overflow: 'hidden',
+  },
+  headerImageWrapper: {
+    ...StyleSheet.absoluteFillObject,
+  },
   headerOverlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(125,125,125,0.45)',
@@ -434,7 +438,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
 
-  // List
+  // Shifts
   sectionHeader: {
     fontSize: 20,
     fontWeight: 'bold',
